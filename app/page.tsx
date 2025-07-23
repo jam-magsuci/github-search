@@ -9,76 +9,27 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Search, Star, GitFork, ExternalLink, Calendar, Code } from "lucide-react"
+import { useQuery, QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
-// Dummy data for GitHub repositories
-const dummyRepos = [
-  {
-    id: 1,
-    name: "awesome-react-components",
-    description: "A curated list of awesome React components and libraries for building modern web applications",
-    language: "TypeScript",
-    stars: 2847,
-    forks: 342,
-    updated: "2024-01-15",
-    url: "https://github.com/username/awesome-react-components",
-    topics: ["react", "components", "ui", "typescript"],
-  },
-  {
-    id: 2,
-    name: "nextjs-dashboard",
-    description: "A modern dashboard built with Next.js 14, featuring server components and app router",
-    language: "JavaScript",
-    stars: 1523,
-    forks: 189,
-    updated: "2024-01-12",
-    url: "https://github.com/username/nextjs-dashboard",
-    topics: ["nextjs", "dashboard", "react", "tailwind"],
-  },
-  {
-    id: 3,
-    name: "api-gateway-service",
-    description: "Microservices API gateway built with Node.js and Express, featuring rate limiting and authentication",
-    language: "JavaScript",
-    stars: 892,
-    forks: 156,
-    updated: "2024-01-10",
-    url: "https://github.com/username/api-gateway-service",
-    topics: ["nodejs", "api", "microservices", "express"],
-  },
-  {
-    id: 4,
-    name: "ml-image-classifier",
-    description: "Machine learning image classification model using TensorFlow and Python",
-    language: "Python",
-    stars: 634,
-    forks: 78,
-    updated: "2024-01-08",
-    url: "https://github.com/username/ml-image-classifier",
-    topics: ["python", "machine-learning", "tensorflow", "ai"],
-  },
-  {
-    id: 5,
-    name: "mobile-expense-tracker",
-    description: "Cross-platform mobile app for expense tracking built with React Native",
-    language: "TypeScript",
-    stars: 445,
-    forks: 67,
-    updated: "2024-01-05",
-    url: "https://github.com/username/mobile-expense-tracker",
-    topics: ["react-native", "mobile", "typescript", "finance"],
-  },
-  {
-    id: 6,
-    name: "docker-dev-environment",
-    description: "Docker compose setup for local development environment with multiple services",
-    language: "Shell",
-    stars: 289,
-    forks: 45,
-    updated: "2024-01-03",
-    url: "https://github.com/username/docker-dev-environment",
-    topics: ["docker", "devops", "development", "containers"],
-  },
-]
+// Create a new QueryClient instance
+const queryClient = new QueryClient()
+
+// Define the GitHub repository type
+type GitHubRepo = {
+  id: number
+  name: string
+  description: string | null
+  language: string | null
+  stargazers_count: number
+  forks_count: number
+  updated_at: string
+  html_url: string
+  topics: string[]
+  owner: {
+    login: string
+    avatar_url: string
+  }
+}
 
 const languageColors: { [key: string]: string } = {
   TypeScript: "bg-blue-500",
@@ -87,25 +38,47 @@ const languageColors: { [key: string]: string } = {
   Shell: "bg-gray-500",
   Go: "bg-cyan-500",
   Rust: "bg-orange-500",
+  Java: "bg-red-500",
+  Cpp: "bg-purple-500",
 }
 
-export default function GitHubRepoExplorer() {
+export default function GitHubRepoExplorerWrapper() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <GitHubRepoExplorer />
+    </QueryClientProvider>
+  )
+}
+
+// Main component
+function GitHubRepoExplorer() {
   const [username, setUsername] = useState("")
-  const [repos, setRepos] = useState<typeof dummyRepos>([])
-  const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
+
+  // Use React Query to fetch GitHub repositories
+  const {
+    data: repos,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery<GitHubRepo[]>({
+    queryKey: ["repos", username],
+    queryFn: async () => {
+      if (!username.trim()) return []
+      const response = await fetch(`https://api.github.com/users/${username}/repos?sort=updated&per_page=100`)
+      if (!response.ok) {
+        throw new Error(`GitHub API error: ${response.status}`)
+      }
+      return response.json()
+    },
+    enabled: false, // Don't fetch automatically, only when the user clicks search
+  })
 
   const handleSearch = async () => {
     if (!username.trim()) return
-
-    setLoading(true)
     setSearched(true)
-
-    // Simulate API call delay
-    setTimeout(() => {
-      setRepos(dummyRepos)
-      setLoading(false)
-    }, 1000)
+    refetch()
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -145,8 +118,8 @@ export default function GitHubRepoExplorer() {
                   className="pl-10"
                 />
               </div>
-              <Button onClick={handleSearch} disabled={loading || !username.trim()} className="px-6">
-                {loading ? "Searching..." : "Search"}
+              <Button onClick={handleSearch} disabled={isLoading || !username.trim()} className="px-6">
+                {isLoading ? "Searching..." : "Search"}
               </Button>
             </div>
           </CardContent>
@@ -155,46 +128,53 @@ export default function GitHubRepoExplorer() {
         {/* Results Section */}
         {searched && (
           <div>
-            {loading ? (
+            {isLoading ? (
               <div className="text-center py-12">
                 <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-slate-600"></div>
                 <p className="mt-4 text-slate-600">Fetching repositories...</p>
+              </div>
+            ) : isError ? (
+              <div className="text-center py-12">
+                <p className="text-red-500">Error fetching repositories: {(error as Error)?.message || 'Unknown error'}</p>
+                <Button onClick={() => refetch()} className="mt-4">Try Again</Button>
               </div>
             ) : (
               <div>
                 <div className="flex items-center gap-3 mb-6">
                   <Avatar className="w-8 h-8">
-                    <AvatarImage src={`/placeholder.svg?height=32&width=32&query=github+user+${username}`} />
+                    <AvatarImage src={repos && repos.length > 0 ? repos[0].owner.avatar_url : `/placeholder.svg?height=32&width=32&query=github+user+${username}`} />
                     <AvatarFallback>{username.slice(0, 2).toUpperCase()}</AvatarFallback>
                   </Avatar>
                   <h2 className="text-2xl font-semibold text-slate-800">{username}'s Repositories</h2>
-                  <Badge variant="secondary">{repos.length} repositories</Badge>
+                  <Badge variant="secondary">{repos?.length || 0} repositories</Badge>
                 </div>
 
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                  {repos.map((repo) => (
+                  {repos && repos.map((repo) => (
                     <Card key={repo.id} className="hover:shadow-lg transition-shadow duration-200">
                       <CardHeader className="pb-3">
                         <div className="flex items-start justify-between">
                           <CardTitle className="text-lg font-semibold text-slate-800 hover:text-blue-600 cursor-pointer">
                             {repo.name}
                           </CardTitle>
-                          <ExternalLink className="w-4 h-4 text-slate-400 hover:text-slate-600 cursor-pointer" />
+                          <a href={repo.html_url} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="w-4 h-4 text-slate-400 hover:text-slate-600 cursor-pointer" />
+                          </a>
                         </div>
                         <CardDescription className="text-sm text-slate-600 line-clamp-2">
-                          {repo.description}
+                          {repo.description || 'No description provided'}
                         </CardDescription>
                       </CardHeader>
 
                       <CardContent className="pt-0">
                         {/* Topics */}
                         <div className="flex flex-wrap gap-1 mb-4">
-                          {repo.topics.slice(0, 3).map((topic) => (
+                          {repo.topics && repo.topics.slice(0, 3).map((topic) => (
                             <Badge key={topic} variant="outline" className="text-xs">
                               {topic}
                             </Badge>
                           ))}
-                          {repo.topics.length > 3 && (
+                          {repo.topics && repo.topics.length > 3 && (
                             <Badge variant="outline" className="text-xs">
                               +{repo.topics.length - 3}
                             </Badge>
@@ -214,11 +194,11 @@ export default function GitHubRepoExplorer() {
                             )}
                             <div className="flex items-center gap-1">
                               <Star className="w-3 h-3" />
-                              <span>{repo.stars.toLocaleString()}</span>
+                              <span>{repo.stargazers_count.toLocaleString()}</span>
                             </div>
                             <div className="flex items-center gap-1">
                               <GitFork className="w-3 h-3" />
-                              <span>{repo.forks}</span>
+                              <span>{repo.forks_count}</span>
                             </div>
                           </div>
                         </div>
@@ -226,14 +206,14 @@ export default function GitHubRepoExplorer() {
                         {/* Updated date */}
                         <div className="flex items-center gap-1 mt-3 text-xs text-slate-500">
                           <Calendar className="w-3 h-3" />
-                          <span>Updated {formatDate(repo.updated)}</span>
+                          <span>Updated {formatDate(repo.updated_at)}</span>
                         </div>
                       </CardContent>
                     </Card>
                   ))}
                 </div>
 
-                {repos.length === 0 && (
+                {repos && repos.length === 0 && (
                   <div className="text-center py-12">
                     <Code className="w-12 h-12 text-slate-400 mx-auto mb-4" />
                     <p className="text-slate-600">No public repositories found for this user.</p>
